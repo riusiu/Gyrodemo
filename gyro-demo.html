@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>ジャイロ連携デモ | Gyro Link Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root{
+    --ink:#120b17; --ink-soft:#1c1225;
+    --mint:#7fe8c9; --rose:#ff6b6b; --text:#f7ecd9; --text-dim:#cbb99a;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none;}
+  .hidden{display:none !important;}
+  html,body{margin:0; padding:0; height:100%; overflow:hidden; background:var(--ink);
+    font-family:'Inter',sans-serif; color:var(--text); touch-action:none; overscroll-behavior:none;}
+  .display{font-family:'Baloo 2',sans-serif;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+
+  #app{position:relative; width:100vw; height:100vh; height:100dvh; height:calc(var(--app-height,100vh));}
+  .screen{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 30% 20%, rgba(90,42,94,.5), rgba(18,11,23,.97) 70%);}
+  .card{width:min(92vw,480px); background:linear-gradient(160deg,var(--ink-soft),#17101f);
+    border:1px solid rgba(255,255,255,.1); border-radius:20px; padding:28px 26px; box-shadow:0 30px 60px rgba(0,0,0,.5);
+    text-align:center;}
+  h1{font-family:'Baloo 2',sans-serif; font-size:24px; margin:0 0 6px;
+    background:linear-gradient(90deg,var(--mint),#ffd97f,var(--rose)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+  p.sub{margin:0 0 18px; color:var(--text-dim); font-size:13px; line-height:1.6;}
+
+  .role-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .role-card{background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:18px 10px; cursor:pointer;}
+  .role-card:active{background:rgba(255,255,255,.1);}
+  .role-card .emoji{font-size:30px; display:block; margin-bottom:6px;}
+  .role-card .name{font-family:'Baloo 2',sans-serif; font-weight:700; font-size:14px;}
+
+  .btn{appearance:none; border:none; cursor:pointer; width:100%; padding:14px 18px; border-radius:12px;
+    font-family:'Baloo 2',sans-serif; font-size:16px; font-weight:700;
+    background:linear-gradient(90deg,var(--rose),#ff9457); color:#241030;
+    box-shadow:0 7px 0 #b3402f; margin-top:8px;}
+  .btn:active{transform:translateY(5px); box-shadow:0 2px 0 #b3402f;}
+  .btn.secondary{background:linear-gradient(90deg,var(--mint),#5fc7ad); box-shadow:0 7px 0 #3c9b83;}
+  .btn.secondary:active{box-shadow:0 2px 0 #3c9b83;}
+  .btn.ghost{background:rgba(255,255,255,.06); color:var(--text); box-shadow:none; border:1px solid rgba(255,255,255,.16); font-size:12.5px; padding:10px;}
+  .btn:disabled{opacity:.4; pointer-events:none;}
+
+  .code-box{text-align:center; margin:16px 0;}
+  .code-box .label{font-size:10.5px; color:var(--text-dim); letter-spacing:.1em; text-transform:uppercase; margin-bottom:6px;}
+  .code-box .code{font-family:'JetBrains Mono',monospace; font-size:38px; font-weight:700; letter-spacing:.12em; color:var(--mint);
+    background:rgba(127,232,201,.08); border:1px dashed rgba(127,232,201,.4); border-radius:12px; padding:12px 8px;}
+  .code-input{width:100%; text-align:center; font-family:'JetBrains Mono',monospace; font-size:28px; letter-spacing:.2em;
+    padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,.2); background:rgba(0,0,0,.25); color:var(--text);
+    margin:12px 0; text-transform:uppercase;}
+  .spinner{width:18px; height:18px; border-radius:50%; border:3px solid rgba(255,255,255,.2); border-top-color:var(--mint);
+    animation:spin .9s linear infinite; display:inline-block; vertical-align:middle; margin-right:8px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .status-line{display:flex; align-items:center; justify-content:center; font-size:12.5px; color:var(--text-dim); margin:12px 0;}
+  .err-line{color:var(--rose); font-size:12px; text-align:center; min-height:16px; margin-top:-4px; margin-bottom:8px;}
+
+  /* ---- Compass view ---- */
+  #compassView{position:absolute; inset:0; z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px;}
+  #camVideo{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#000; z-index:0;}
+  .compass-dim{position:absolute; inset:0; z-index:1; background:rgba(10,6,14,0.45);}
+  .compass-wrap, .readout, .debug-line, .gyro-toggle, .touch-controls, .tag{ z-index:2; }
+  .tag{position:absolute; top:calc(14px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+    padding:6px 16px; border-radius:999px; background:rgba(18,11,23,.6); font-size:11px; letter-spacing:.06em;
+    text-transform:uppercase; font-weight:700; color:var(--text-dim); display:flex; align-items:center; gap:8px;}
+  .tag .dot{width:8px; height:8px; border-radius:50%;}
+  .tag.player .dot{background:var(--rose); box-shadow:0 0 8px var(--rose);}
+  .tag.spotter .dot{background:var(--mint); box-shadow:0 0 8px var(--mint);}
+
+  .compass-wrap{position:relative; width:min(70vw,320px); aspect-ratio:1/1;}
+  .compass-ring{position:absolute; inset:0; border-radius:50%; border:3px solid rgba(255,255,255,.18);
+    background:radial-gradient(circle at 40% 35%, rgba(255,255,255,.06), rgba(0,0,0,.25));}
+  .compass-ring::before{content:''; position:absolute; left:50%; top:10px; width:3px; height:18px; background:var(--mint);
+    transform:translateX(-50%); border-radius:2px; box-shadow:0 0 8px var(--mint);}
+  .compass-needle{position:absolute; left:50%; top:50%; width:8px; height:46%; background:linear-gradient(var(--rose), transparent 85%);
+    transform-origin:50% 100%; transform:translate(-50%,-100%) rotate(0deg); border-radius:6px; transition:transform .05s linear;}
+  .compass-needle::after{content:''; position:absolute; top:-6px; left:50%; width:16px; height:16px; background:var(--rose);
+    border-radius:50%; transform:translateX(-50%); box-shadow:0 0 10px var(--rose);}
+  .compass-center{position:absolute; left:50%; top:50%; width:14px; height:14px; background:var(--text); border-radius:50%; transform:translate(-50%,-50%);}
+
+  .readout{font-family:'JetBrains Mono',monospace; font-size:15px; color:var(--mint); text-align:center;}
+  .readout .deg{font-size:30px; font-weight:700;}
+  .debug-line{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim); text-align:center; min-height:16px;}
+
+  .gyro-toggle{display:flex; align-items:center; justify-content:center; gap:8px; font-size:12px; color:var(--text-dim);}
+  .touch-controls{position:absolute; bottom:calc(20px + env(safe-area-inset-bottom)); left:0; right:0;
+    display:flex; flex-direction:column; align-items:center; gap:8px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="screen" id="scrRole">
+    <div class="card">
+      <h1 class="display">🧭 ジャイロ連携デモ</h1>
+      <p class="sub">スマホの向きをPCにリアルタイムで反映するだけの検証用ページです。役割を選んでください。</p>
+      <div class="role-grid">
+        <div class="role-card" id="pickPlayer">
+          <span class="emoji">📱</span>
+          <div class="name">プレイヤー(スマホ)</div>
+        </div>
+        <div class="role-card" id="pickSpotter">
+          <span class="emoji">🖥️</span>
+          <div class="name">観測者(PC)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="scrHost">
+    <div class="card">
+      <h1 class="display">合言葉を伝えよう</h1>
+      <p class="sub">このコードをPC側に入力してもらってください。</p>
+      <div class="code-box"><div class="label">ROOM CODE</div><div class="code mono" id="hostCodeDisplay">----</div></div>
+      <div class="status-line" id="hostWaitStatus"><span class="spinner"></span>観測者の参加を待っています…</div>
+      <button class="btn" id="hostStartBtn" disabled>接続完了・はじめる</button>
+      <button class="btn ghost" id="hostSoloBtn">ソロでテスト開始</button>
+      <button class="btn ghost" id="hostBackBtn">役割選択に戻る</button>
+    </div>
+  </div>
+
+  <div class="screen hidden" id="scrJoin">
+    <div class="card">
+      <h1 class="display">合言葉を入力</h1>
+      <p class="sub">プレイヤー側に表示されている4桁のコードを入力してください。</p>
+      <input class="code-input" id="joinCodeInput" maxlength="4" placeholder="XXXX" autocomplete="off" autocapitalize="characters">
+      <div class="err-line" id="joinErr"></div>
+      <button class="btn secondary" id="joinBtn">接続する</button>
+      <button class="btn ghost" id="joinBackBtn">役割選択に戻る</button>
+    </div>
+  </div>
+
+  <div id="compassView" class="hidden">
+    <video id="camVideo" autoplay playsinline muted></video>
+    <div class="compass-dim"></div>
+    <div class="tag" id="roleTag"><span class="dot"></span><span id="roleTagText">プレイヤー</span></div>
+    <div class="compass-wrap">
+      <div class="compass-ring"></div>
+      <div class="compass-needle" id="needle"></div>
+      <div class="compass-center"></div>
+    </div>
+    <div class="readout"><span class="deg" id="degReadout">0</span>°</div>
+    <div class="debug-line" id="debugLine">-</div>
+    <div class="touch-controls" id="playerControls">
+      <label class="gyro-toggle"><input type="checkbox" id="gyroToggle" checked>向きで回転</label>
+      <label class="gyro-toggle"><input type="checkbox" id="gyroInvert">反転</label>
+      <button class="btn ghost" id="backToRoleBtn" style="max-width:220px;">役割選択に戻る</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  function setAppHeight(){
+    const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    document.documentElement.style.setProperty('--app-height', h+'px');
+  }
+  setAppHeight();
+  window.addEventListener('resize', setAppHeight);
+  window.addEventListener('orientationchange', ()=>setTimeout(setAppHeight,100));
+  if(window.visualViewport) window.visualViewport.addEventListener('resize', setAppHeight);
+
+  const PEER_PREFIX = 'gyrodemo5-';
+  let peer=null, conn=null, role=null, roomCode=null;
+  let gyroActive=false, gyroDelta=0, playerAngleBaseline=0;
+  let netHeading=0;
+  let localStream=null;
+
+  async function startCamera(){
+    try{
+      localStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+      document.getElementById('camVideo').srcObject = localStream;
+      if(conn && conn.open && peer){
+        try{ peer.call(conn.peer, localStream); }catch(e){}
+      }
+    }catch(e){
+      console.warn('camera failed', e);
+    }
+  }
+
+  function genCode(){
+    const chars='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    let c=''; for(let i=0;i<4;i++) c+=chars[Math.floor(Math.random()*chars.length)];
+    return c;
+  }
+  function teardownPeer(){
+    try{ if(conn) conn.close(); }catch(e){}
+    try{ if(peer) peer.destroy(); }catch(e){}
+    conn=null; peer=null;
+  }
+  function showScreen(id){
+    ['scrRole','scrHost','scrJoin'].forEach(s=>document.getElementById(s).classList.toggle('hidden', s!==id));
+    document.getElementById('compassView').classList.add('hidden');
+  }
+  function showCompass(){
+    ['scrRole','scrHost','scrJoin'].forEach(s=>document.getElementById(s).classList.add('hidden'));
+    document.getElementById('compassView').classList.remove('hidden');
+  }
+
+  function setNeedle(deg){
+    document.getElementById('needle').style.transform = 'translate(-50%,-100%) rotate('+deg+'deg)';
+    document.getElementById('degReadout').textContent = Math.round(((deg%360)+360)%360);
+  }
+
+  // ---- Gyro (identical math to the main game, trimmed) ----
+  function getHeadingFromOrientation(alphaDeg, betaDeg, gammaDeg){
+    const d2r = Math.PI/180;
+    const x = betaDeg*d2r, y = alphaDeg*d2r, z = -gammaDeg*d2r;
+    const c1=Math.cos(x/2), s1=Math.sin(x/2);
+    const c2=Math.cos(y/2), s2=Math.sin(y/2);
+    const c3=Math.cos(z/2), s3=Math.sin(z/2);
+    const qx = s1*c2*c3 + c1*s2*s3;
+    const qy = c1*s2*c3 - s1*c2*s3;
+    const qz = c1*c2*s3 - s1*s2*c3;
+    const qw = c1*c2*c3 + s1*s2*s3;
+    const ax=-Math.SQRT1_2, aw=Math.SQRT1_2;
+    const rw = qw*aw - qx*ax, rx = qw*ax + qx*aw, ry = qy*aw + qz*ax, rz = qz*aw - qy*ax;
+    const vx=0, vy=0, vz=-1;
+    const tx = 2*(ry*vz - rz*vy), ty = 2*(rz*vx - rx*vz), tz = 2*(rx*vy - ry*vx);
+    const fx = vx + rw*tx + (ry*tz - rz*ty);
+    const fz = vz + rw*tz + (rx*ty - ry*tx);
+    return Math.atan2(fx, fz);
+  }
+
+  let gyroSystemInitialized=false;
+  function initGyroSystem(){
+    if(gyroSystemInitialized) return;
+    gyroSystemInitialized=true;
+    const gyroToggle=document.getElementById('gyroToggle');
+    const gyroInvert=document.getElementById('gyroInvert');
+    const debugLine=document.getElementById('debugLine');
+    let headingBaseline=null, lastSensorTime=0, sensorHandler=null, sensorEventName=null;
+
+    async function enableGyro(){
+      try{
+        if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+          const res = await DeviceOrientationEvent.requestPermission();
+          if(res!=='granted'){ gyroToggle.checked=false; debugLine.textContent='センサーの許可が得られませんでした'; return; }
+        }
+        debugLine.textContent='センサー待機中…';
+        playerAngleBaseline=0; headingBaseline=null; gyroDelta=0; gyroActive=true;
+        sensorEventName = ('ondeviceorientationabsolute' in window) ? 'deviceorientationabsolute' : 'deviceorientation';
+        sensorHandler = (e)=>{
+          if(e.alpha===null||e.beta===null||e.gamma===null) return;
+          lastSensorTime = performance.now();
+          const heading = getHeadingFromOrientation(e.alpha, e.beta, e.gamma);
+          if(headingBaseline===null) headingBaseline = heading;
+          let delta = heading - headingBaseline;
+          while(delta>Math.PI) delta-=Math.PI*2;
+          while(delta<-Math.PI) delta+=Math.PI*2;
+          if(Math.abs(delta) < 0.035) delta = 0;
+          const sign = gyroInvert.checked ? -1 : 1;
+          gyroDelta = sign*delta;
+          debugLine.textContent = 'α'+e.alpha.toFixed(0)+' β'+e.beta.toFixed(0)+' γ'+e.gamma.toFixed(0)+' Δ'+(gyroDelta*180/Math.PI).toFixed(0)+'°';
+        };
+        window.addEventListener(sensorEventName, sensorHandler);
+        setTimeout(()=>{
+          if(gyroToggle.checked && performance.now()-lastSensorTime>1800){
+            debugLine.textContent='センサー値を受信できません(未対応/未許可の可能性)';
+          }
+        }, 2000);
+      }catch(err){ gyroToggle.checked=false; debugLine.textContent='センサーが使えませんでした'; }
+    }
+    function disableGyro(){
+      gyroActive=false; gyroDelta=0; headingBaseline=null;
+      if(sensorHandler && sensorEventName){ window.removeEventListener(sensorEventName, sensorHandler); sensorHandler=null; }
+      debugLine.textContent='-';
+    }
+    gyroToggle.addEventListener('change', ()=>{ if(gyroToggle.checked) enableGyro(); else disableGyro(); });
+    window._enableGyroIfChecked = ()=>{ if(gyroToggle.checked && !gyroActive) enableGyro(); };
+  }
+  initGyroSystem();
+
+  // ---- Render loop ----
+  function loop(){
+    if(role==='player'){
+      const headingDeg = (playerAngleBaseline+gyroDelta)*180/Math.PI;
+      setNeedle(headingDeg);
+    } else if(role==='spotter'){
+      setNeedle(netHeading*180/Math.PI);
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ---- Role select ----
+  document.getElementById('pickPlayer').addEventListener('click', ()=>startHostFlow());
+  document.getElementById('pickSpotter').addEventListener('click', ()=>{ showScreen('scrJoin'); document.getElementById('joinCodeInput').focus(); });
+
+  function startHostFlow(){
+    role='player';
+    showScreen('scrHost');
+    document.getElementById('hostStartBtn').disabled=true;
+    document.getElementById('hostWaitStatus').innerHTML='<span class="spinner"></span>観測者の参加を待っています…';
+    teardownPeer();
+    openHostPeer();
+  }
+  function openHostPeer(){
+    roomCode = genCode();
+    document.getElementById('hostCodeDisplay').textContent = roomCode;
+    peer = new Peer(PEER_PREFIX+roomCode);
+    peer.on('connection', (c)=>{
+      conn=c;
+      conn.on('open', ()=>{
+        document.getElementById('hostWaitStatus').textContent='✅ 観測者が接続しました！';
+        document.getElementById('hostStartBtn').disabled=false;
+      });
+    });
+    peer.on('error', (err)=>{
+      if(err.type==='unavailable-id'){ openHostPeer(); }
+      else{ document.getElementById('hostWaitStatus').textContent='接続エラー: '+err.type; }
+    });
+  }
+  document.getElementById('hostBackBtn').addEventListener('click', ()=>{ teardownPeer(); showScreen('scrRole'); });
+  document.getElementById('hostSoloBtn').addEventListener('click', ()=> enterCompass());
+  document.getElementById('hostStartBtn').addEventListener('click', ()=> enterCompass());
+
+  function enterCompass(){
+    document.getElementById('roleTag').className='tag player';
+    document.getElementById('roleTagText').textContent='プレイヤー';
+    document.getElementById('playerControls').classList.remove('hidden');
+    showCompass();
+    startCamera();
+    if(window._enableGyroIfChecked) window._enableGyroIfChecked();
+    const t=setInterval(()=>{
+      if(conn && conn.open){
+        try{ conn.send({heading: playerAngleBaseline+gyroDelta}); }catch(e){}
+      }
+    }, 80);
+    window._gyroDemoTimer = t;
+  }
+
+  document.getElementById('backToRoleBtn').addEventListener('click', ()=>{
+    if(window._gyroDemoTimer) clearInterval(window._gyroDemoTimer);
+    if(localStream){ localStream.getTracks().forEach(t=>t.stop()); localStream=null; }
+    teardownPeer(); role=null; roomCode=null;
+    showScreen('scrRole');
+  });
+
+  // ---- Join (spotter) ----
+  const joinInput=document.getElementById('joinCodeInput');
+  joinInput.addEventListener('input', ()=>{ joinInput.value=joinInput.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
+  document.getElementById('joinBackBtn').addEventListener('click', ()=>{ teardownPeer(); showScreen('scrRole'); });
+  document.getElementById('joinBtn').addEventListener('click', ()=>{
+    const code=joinInput.value.trim().toUpperCase();
+    const errEl=document.getElementById('joinErr');
+    errEl.textContent='';
+    if(code.length!==4){ errEl.textContent='4桁のコードを入力してください。'; return; }
+    document.getElementById('joinBtn').disabled=true;
+    teardownPeer();
+    peer=new Peer();
+    peer.on('call', (incomingCall)=>{
+      incomingCall.answer();
+      incomingCall.on('stream', (remoteStream)=>{
+        document.getElementById('camVideo').srcObject = remoteStream;
+      });
+    });
+    let settled=false;
+    const failTimeout=setTimeout(()=>{
+      if(!settled){ settled=true; errEl.textContent='接続できませんでした。コードを確認してください。'; document.getElementById('joinBtn').disabled=false; teardownPeer(); }
+    }, 8000);
+    peer.on('open', ()=>{
+      conn=peer.connect(PEER_PREFIX+code, {reliable:true});
+      conn.on('open', ()=>{
+        if(settled) return; settled=true; clearTimeout(failTimeout);
+        role='spotter'; roomCode=code;
+        document.getElementById('joinBtn').disabled=false;
+        document.getElementById('roleTag').className='tag spotter';
+        document.getElementById('roleTagText').textContent='観測者(PC)';
+        document.getElementById('playerControls').classList.add('hidden');
+        showCompass();
+      });
+      conn.on('data', (msg)=>{ if(msg && typeof msg.heading==='number') netHeading=msg.heading; });
+    });
+    peer.on('error', (err)=>{
+      if(settled) return; settled=true; clearTimeout(failTimeout);
+      document.getElementById('joinBtn').disabled=false;
+      if(err.type==='peer-unavailable') errEl.textContent='コードが見つかりません。プレイヤー側を確認してください。';
+      else errEl.textContent='接続エラー: '+err.type;
+      teardownPeer();
+    });
+  });
+
+})();
+</script>
+</body>
+</html>
